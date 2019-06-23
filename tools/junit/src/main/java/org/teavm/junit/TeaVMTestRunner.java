@@ -95,12 +95,13 @@ public class TeaVMTestRunner extends Runner implements Filterable {
     static final String JUNIT4_AFTER = "org.junit.After";
     private static final String PATH_PARAM = "teavm.junit.target";
     private static final String JS_RUNNER = "teavm.junit.js.runner";
-    private static final String THREAD_COUNT = "teavm.junit.js.threads";
+    private static final String THREAD_COUNT = "teavm.junit.threads";
     private static final String JS_ENABLED = "teavm.junit.js";
     static final String JS_DECODE_STACK = "teavm.junit.js.decodeStack";
     private static final String C_ENABLED = "teavm.junit.c";
     private static final String WASM_ENABLED = "teavm.junit.wasm";
     private static final String C_COMPILER = "teavm.junit.c.compiler";
+    private static final String C_LINE_NUMBERS = "teavm.junit.c.lineNumbers";
     private static final String MINIFIED = "teavm.junit.minified";
     private static final String OPTIMIZED = "teavm.junit.optimized";
     private static final String FAST_ANALYSIS = "teavm.junit.fastAnalysis";
@@ -277,7 +278,6 @@ public class TeaVMTestRunner extends Runner implements Filterable {
             ran = true;
             success = runInJvm(child, notifier, expectedExceptions);
         }
-
 
         if (success && outputDir != null) {
             int[] configurationIndex = new int[] { 0 };
@@ -595,33 +595,54 @@ public class TeaVMTestRunner extends Runner implements Filterable {
             };
         }
         return compileTest(method, configuration, targetSupplier, TestEntryPoint.class.getName(), path, ".js",
-                postBuild);
+                postBuild, false);
     }
 
     private CompileResult compileToC(Method method, TeaVMTestConfiguration<CTarget> configuration,
             File path) {
-        return compileTest(method, configuration, CTarget::new, TestNativeEntryPoint.class.getName(), path, ".c", null);
+        CompilePostProcessor postBuild = (vm, file) -> {
+            try {
+                resourceToFile("teavm-CMakeLists.txt", new File(file.getParent(), "CMakeLists.txt"));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        };
+        return compileTest(method, configuration, this::createCTarget, TestNativeEntryPoint.class.getName(), path, ".c",
+                postBuild, true);
+    }
+
+    private CTarget createCTarget() {
+        CTarget cTarget = new CTarget();
+        cTarget.setLineNumbersGenerated(Boolean.parseBoolean(System.getProperty(C_LINE_NUMBERS, "false")));
+        return cTarget;
     }
 
     private CompileResult compileToWasm(Method method, TeaVMTestConfiguration<WasmTarget> configuration,
             File path) {
         return compileTest(method, configuration, WasmTarget::new, TestNativeEntryPoint.class.getName(), path,
-                ".wasm", null);
+                ".wasm", null, false);
     }
 
     private <T extends TeaVMTarget> CompileResult compileTest(Method method, TeaVMTestConfiguration<T> configuration,
             Supplier<T> targetSupplier, String entryPoint, File path, String extension,
-            CompilePostProcessor postBuild) {
+            CompilePostProcessor postBuild, boolean separateDir) {
         CompileResult result = new CompileResult();
 
         StringBuilder simpleName = new StringBuilder();
         simpleName.append("test");
         String suffix = configuration.getSuffix();
         if (!suffix.isEmpty()) {
-            simpleName.append('-').append(suffix);
+            if (!separateDir) {
+                simpleName.append('-').append(suffix);
+            }
         }
-        simpleName.append(extension);
-        File outputFile = new File(path, simpleName.toString());
+        File outputFile;
+        if (separateDir) {
+            outputFile = new File(new File(path, simpleName.toString()), "test" + extension);
+        } else {
+            simpleName.append(extension);
+            outputFile = new File(path, simpleName.toString());
+        }
         result.file = outputFile;
 
         ClassLoader classLoader = TeaVMTestRunner.class.getClassLoader();
@@ -660,6 +681,9 @@ public class TeaVMTestRunner extends Runner implements Filterable {
         if (fastAnalysis) {
             vm.setOptimizationLevel(TeaVMOptimizationLevel.SIMPLE);
             vm.addVirtualMethods(m -> true);
+        }
+        if (!outputFile.getParentFile().exists()) {
+            outputFile.getParentFile().mkdirs();
         }
         vm.build(new DirectoryBuildTarget(outputFile.getParentFile()), outputFile.getName());
         if (!vm.getProblemProvider().getProblems().isEmpty()) {

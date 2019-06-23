@@ -19,7 +19,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import org.teavm.interop.Export;
@@ -27,6 +26,7 @@ import org.teavm.interop.Import;
 import org.teavm.model.AnnotationReader;
 import org.teavm.model.ClassReaderSource;
 import org.teavm.model.FieldReference;
+import org.teavm.model.MethodDescriptor;
 import org.teavm.model.MethodReader;
 import org.teavm.model.MethodReference;
 import org.teavm.model.ValueType;
@@ -35,11 +35,11 @@ public abstract class LowLevelNameProvider {
     private ClassReaderSource classSource;
 
     protected Set<String> occupiedTopLevelNames = new HashSet<>();
-    protected Map<String, Set<String>> occupiedVtableNames = new HashMap<>();
+    protected Set<String> occupiedVtableNames = new HashSet<>();
     protected Map<String, Set<String>> occupiedClassNames = new HashMap<>();
 
     protected Map<MethodReference, String> methodNames = new HashMap<>();
-    protected Map<MethodReference, String> virtualMethodNames = new HashMap<>();
+    protected Map<MethodDescriptor, String> virtualMethodNames = new HashMap<>();
 
     protected Map<FieldReference, String> staticFieldNames = new HashMap<>();
     protected Map<FieldReference, String> memberFieldNames = new HashMap<>();
@@ -47,10 +47,9 @@ public abstract class LowLevelNameProvider {
     protected Map<String, String> classNames = new HashMap<>();
     protected Map<String, String> classInitializerNames = new HashMap<>();
     protected Map<String, String> classClassNames = new HashMap<>();
+    protected Map<ValueType, String> classSystemInitializerNames = new HashMap<>();
     protected Map<ValueType, String> classInstanceNames = new HashMap<>();
     protected Map<ValueType, String> supertypeNames = new HashMap<>();
-
-    private Set<ValueType> types = new LinkedHashSet<>();
 
     public LowLevelNameProvider(ClassReaderSource classSource) {
         this.classSource = classSource;
@@ -63,11 +62,10 @@ public abstract class LowLevelNameProvider {
         });
     }
 
-    public String forVirtualMethod(MethodReference method) {
+    public String forVirtualMethod(MethodDescriptor method) {
         return virtualMethodNames.computeIfAbsent(method, k -> {
-            Set<String> occupied = occupiedVtableNames.computeIfAbsent(k.getClassName(),
-                    c -> new HashSet<>(Arrays.asList("parent")));
-            return pickUnoccupied("virt_" + k.getName(), occupied);
+            Set<String> occupied = occupiedVtableNames;
+            return pickUnoccupied("virt_" + sanitize(k.getName()), occupied);
         });
     }
 
@@ -110,13 +108,16 @@ public abstract class LowLevelNameProvider {
         return classInitializerNames.computeIfAbsent(className, k -> pickUnoccupied("initclass_" + suggestForClass(k)));
     }
 
+    public String forClassSystemInitializer(ValueType type) {
+        return classSystemInitializerNames.computeIfAbsent(type, k -> pickUnoccupied("sysinitclass_"
+                + suggestForType(k)));
+    }
+
     public String forClassClass(String className) {
-        types.add(ValueType.object(className));
         return classClassNames.computeIfAbsent(className, k -> pickUnoccupied(suggestForClass(k) + "_VT"));
     }
 
     public String forClassInstance(ValueType type) {
-        types.add(type);
         return classInstanceNames.computeIfAbsent(type, k -> pickUnoccupied(suggestForType(k) + "_Cls"));
     }
 
@@ -213,10 +214,6 @@ public abstract class LowLevelNameProvider {
         }
 
         return result;
-    }
-
-    public Set<? extends ValueType> getTypes() {
-        return types;
     }
 
     protected Set<? extends String> getKeywords() {

@@ -551,7 +551,7 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
         Linker linker = new Linker(dependency);
         MutableClassHolderSource cutClasses = new MutableClassHolderSource();
         MissingItemsProcessor missingItemsProcessor = new MissingItemsProcessor(dependency,
-                dependency.getClassHierarchy(), diagnostics);
+                dependency.getClassHierarchy(), diagnostics, target.getPlatformTags());
         if (wasCancelled()) {
             return cutClasses;
         }
@@ -908,12 +908,17 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
         public ClassInitializerInfo getClassInitializerInfo() {
             return classInitializerInfo;
         }
+
+        @Override
+        public TeaVMOptimizationLevel getOptimizationLevel() {
+            return optimizationLevel;
+        }
     };
 
     class PostProcessingClassHolderSource implements ListableClassHolderSource {
         private Linker linker = new Linker(dependencyAnalyzer);
         private MissingItemsProcessor missingItemsProcessor = new MissingItemsProcessor(dependencyAnalyzer,
-                dependencyAnalyzer.getClassHierarchy(), diagnostics);
+                dependencyAnalyzer.getClassHierarchy(), diagnostics, target.getPlatformTags());
         private Map<String, ClassHolder> cache = new HashMap<>();
         private Set<String> classNames = Collections.unmodifiableSet(new HashSet<>(
                 dependencyAnalyzer.getReachableClasses().stream()
@@ -954,12 +959,14 @@ public class TeaVM implements TeaVMHost, ServiceRepository {
                     }
                     return program;
                 };
+
                 for (MethodHolder method : cls.getMethods().toArray(new MethodHolder[0])) {
                     MethodDependencyInfo methodDep = dependencyAnalyzer.getMethod(method.getReference());
                     if (methodDep == null) {
                         cls.removeMethod(method);
                     } else if (!methodDep.isUsed()) {
                         method.getModifiers().add(ElementModifier.ABSTRACT);
+                        method.setProgram(null);
                     } else {
                         MethodReader methodReader = classReader.getMethod(method.getDescriptor());
                         if (methodReader != null && methodReader.getProgram() != null) {

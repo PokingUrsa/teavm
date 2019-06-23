@@ -44,6 +44,7 @@ import org.teavm.backend.wasm.generators.WasmMethodGeneratorContext;
 import org.teavm.backend.wasm.intrinsics.AddressIntrinsic;
 import org.teavm.backend.wasm.intrinsics.AllocatorIntrinsic;
 import org.teavm.backend.wasm.intrinsics.ClassIntrinsic;
+import org.teavm.backend.wasm.intrinsics.ConsoleIntrinsic;
 import org.teavm.backend.wasm.intrinsics.DoubleIntrinsic;
 import org.teavm.backend.wasm.intrinsics.ExceptionHandlingIntrinsic;
 import org.teavm.backend.wasm.intrinsics.FloatIntrinsic;
@@ -99,7 +100,7 @@ import org.teavm.diagnostics.Diagnostics;
 import org.teavm.interop.Address;
 import org.teavm.interop.DelegateTo;
 import org.teavm.interop.Import;
-import org.teavm.interop.PlatformMarkers;
+import org.teavm.interop.Platforms;
 import org.teavm.interop.StaticInit;
 import org.teavm.model.AnnotationHolder;
 import org.teavm.model.BasicBlock;
@@ -122,10 +123,12 @@ import org.teavm.model.MethodReference;
 import org.teavm.model.Program;
 import org.teavm.model.ValueType;
 import org.teavm.model.classes.TagRegistry;
+import org.teavm.model.classes.VirtualTableBuilder;
 import org.teavm.model.classes.VirtualTableProvider;
 import org.teavm.model.instructions.CloneArrayInstruction;
 import org.teavm.model.instructions.InvocationType;
 import org.teavm.model.instructions.InvokeInstruction;
+import org.teavm.model.lowlevel.CallSiteDescriptor;
 import org.teavm.model.lowlevel.Characteristics;
 import org.teavm.model.lowlevel.ClassInitializerEliminator;
 import org.teavm.model.lowlevel.ClassInitializerTransformer;
@@ -269,6 +272,12 @@ public class WasmTarget implements TeaVMTarget, TeaVMWasmHost {
                 String[].class)).use();
         dependencyAnalyzer.linkMethod(new MethodReference(WasmRuntime.class, "lookupResource", Address.class,
                 String.class, Address.class)).use();
+        dependencyAnalyzer.linkMethod(new MethodReference(WasmRuntime.class, "printString",
+                String.class, void.class)).use();
+        dependencyAnalyzer.linkMethod(new MethodReference(WasmRuntime.class, "printInt",
+                int.class, void.class)).use();
+        dependencyAnalyzer.linkMethod(new MethodReference(WasmRuntime.class, "printOutOfMemory",
+                void.class)).use();
 
         dependencyAnalyzer.linkMethod(new MethodReference(Allocator.class, "allocate",
                 RuntimeClass.class, Address.class)).use();
@@ -344,6 +353,7 @@ public class WasmTarget implements TeaVMTarget, TeaVMWasmHost {
         context.addIntrinsic(new LongIntrinsic());
         context.addIntrinsic(new IntegerIntrinsic());
         context.addIntrinsic(new ObjectIntrinsic());
+        context.addIntrinsic(new ConsoleIntrinsic());
         context.addGenerator(new ArrayGenerator());
 
         IntrinsicFactoryContext intrinsicFactoryContext = new IntrinsicFactoryContext();
@@ -366,7 +376,7 @@ public class WasmTarget implements TeaVMTarget, TeaVMWasmHost {
         int pages = (minHeapSize + pageSize - 1) / pageSize;
         module.setMemorySize(pages);
         generateMethods(classes, context, generator, classGenerator, binaryWriter, module);
-        exceptionHandlingIntrinsic.postProcess(shadowStackTransformer.getCallSites());
+        exceptionHandlingIntrinsic.postProcess(CallSiteDescriptor.extract(classes, classes.getClassNames()));
         generateIsSupertypeFunctions(tagRegistry, module, classGenerator);
         classGenerator.postProcess();
         mutatorIntrinsic.setStaticGcRootsAddress(classGenerator.getStaticGcRootsAddress());
@@ -508,7 +518,8 @@ public class WasmTarget implements TeaVMTarget, TeaVMWasmHost {
         for (String className : classes.getClassNames()) {
             ClassHolder cls = classes.get(className);
             for (MethodHolder method : cls.getMethods()) {
-                if (context.getIntrinsic(method.getReference()) != null) {
+                if (method.hasModifier(ElementModifier.ABSTRACT)
+                        || context.getIntrinsic(method.getReference()) != null) {
                     continue;
                 }
                 module.add(generator.generateDefinition(method.getReference()));
@@ -767,6 +778,13 @@ public class WasmTarget implements TeaVMTarget, TeaVMWasmHost {
     }
 
     private VirtualTableProvider createVirtualTableProvider(ListableClassHolderSource classes) {
+        VirtualTableBuilder builder = new VirtualTableBuilder(classes);
+        builder.setMethodsUsedAtCallSites(getMethodsUsedOnCallSites(classes));
+        builder.setMethodCalledVirtually(controller::isVirtual);
+        return builder.build();
+    }
+
+    private Set<MethodReference> getMethodsUsedOnCallSites(ListableClassHolderSource classes) {
         Set<MethodReference> virtualMethods = new HashSet<>();
 
         for (String className : classes.getClassNames()) {
@@ -792,12 +810,12 @@ public class WasmTarget implements TeaVMTarget, TeaVMWasmHost {
             }
         }
 
-        return new VirtualTableProvider(classes, virtualMethods, controller::isVirtual);
+        return virtualMethods;
     }
 
     @Override
     public String[] getPlatformTags() {
-        return new String[] { PlatformMarkers.WEBASSEMBLY, PlatformMarkers.LOW_LEVEL };
+        return new String[] { Platforms.WEBASSEMBLY, Platforms.LOW_LEVEL };
     }
 
     @Override

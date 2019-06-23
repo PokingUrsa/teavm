@@ -18,7 +18,6 @@ package org.teavm.runtime;
 import org.teavm.interop.Address;
 import org.teavm.interop.Export;
 import org.teavm.interop.StaticInit;
-import org.teavm.interop.Structure;
 import org.teavm.interop.Unmanaged;
 
 @StaticInit
@@ -26,7 +25,34 @@ public final class ExceptionHandling {
     private ExceptionHandling() {
     }
 
-    public static native CallSite findCallSiteById(int id);
+    public static native CallSite findCallSiteById(int id, Address frame);
+
+    public static void printStack() {
+        Address stackFrame = ShadowStack.getStackTop();
+        while (stackFrame != null) {
+            int callSiteId = ShadowStack.getCallSiteId(stackFrame);
+            CallSite callSite = findCallSiteById(callSiteId, stackFrame);
+            CallSiteLocation location = callSite.location;
+            MethodLocation methodLocation = location.method;
+
+            Console.printString("    at ");
+            if (methodLocation.className == null || methodLocation.methodName == null) {
+                Console.printString("(Unknown method)");
+            } else {
+                Console.printString(methodLocation.className.value);
+                Console.printString(".");
+                Console.printString(methodLocation.methodName.value);
+            }
+            Console.printString("(");
+            if (methodLocation.fileName != null && location.lineNumber >= 0) {
+                Console.printString(methodLocation.fileName.value);
+                Console.printString(":");
+                Console.printInt(location.lineNumber);
+            }
+            Console.printString(")\n");
+            stackFrame = ShadowStack.getNextStackFrame(stackFrame);
+        }
+    }
 
     private static Throwable thrownException;
 
@@ -48,16 +74,15 @@ public final class ExceptionHandling {
         Address stackFrame = ShadowStack.getStackTop();
         stackLoop: while (stackFrame != null) {
             int callSiteId = ShadowStack.getCallSiteId(stackFrame);
-            CallSite callSite = findCallSiteById(callSiteId);
+            CallSite callSite = findCallSiteById(callSiteId, stackFrame);
             ExceptionHandler handler = callSite.firstHandler;
 
-            for (int i = 0; i < callSite.handlerCount; ++i) {
+            while (handler != null) {
                 if (handler.exceptionClass == null || handler.exceptionClass.isSupertypeOf.apply(exceptionClass)) {
                     ShadowStack.setExceptionHandlerId(stackFrame, handler.id);
                     break stackLoop;
                 }
-
-                handler = Structure.add(ExceptionHandler.class, handler, 1);
+                handler = handler.next;
             }
 
             ShadowStack.setExceptionHandlerId(stackFrame, callSiteId - 1);
@@ -83,19 +108,22 @@ public final class ExceptionHandling {
             stackFrame = ShadowStack.getNextStackFrame(stackFrame);
             size++;
         }
-        return size;
+        return size + 1;
     }
 
     @Unmanaged
     public static void fillStackTrace(StackTraceElement[] target) {
-        Address stackFrame = ShadowStack.getNextStackFrame(ShadowStack.getStackTop());
+        Address stackFrame = ShadowStack.getStackTop();
         int index = 0;
         while (stackFrame != null && index < target.length) {
             int callSiteId = ShadowStack.getCallSiteId(stackFrame);
-            CallSite callSite = findCallSiteById(callSiteId);
+            CallSite callSite = findCallSiteById(callSiteId, stackFrame);
             CallSiteLocation location = callSite.location;
-            StackTraceElement element = createElement(location != null ? location.className : "",
-                    location != null ? location.methodName : "", location != null ? location.fileName : null,
+            MethodLocation methodLocation = location.method;
+            StackTraceElement element = createElement(
+                    location != null && methodLocation.className != null ? methodLocation.className.value : "",
+                    location != null && methodLocation.methodName != null ? methodLocation.methodName.value : "",
+                    location != null && methodLocation.fileName != null ? methodLocation.fileName.value : null,
                     location != null ? location.lineNumber : -1);
             target[index++] = element;
             stackFrame = ShadowStack.getNextStackFrame(stackFrame);

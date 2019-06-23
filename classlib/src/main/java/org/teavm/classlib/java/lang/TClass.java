@@ -47,7 +47,6 @@ import org.teavm.jso.core.JSArray;
 import org.teavm.platform.Platform;
 import org.teavm.platform.PlatformClass;
 import org.teavm.platform.PlatformSequence;
-import org.teavm.platform.metadata.ClassResource;
 import org.teavm.runtime.RuntimeClass;
 import org.teavm.runtime.RuntimeObject;
 
@@ -153,6 +152,7 @@ public class TClass<T> extends TObject implements TAnnotatedElement {
         return Address.ofObject(this).<RuntimeClass>toStructure().simpleName;
     }
 
+    @DelegateTo("setSimpleNameCacheLowLevel")
     private void setSimpleNameCache(String value) {
         simpleName = value;
     }
@@ -559,7 +559,7 @@ public class TClass<T> extends TObject implements TAnnotatedElement {
     @SuppressWarnings("unchecked")
     public T cast(TObject obj) {
         if (obj != null && !isAssignableFrom((TClass<?>) (Object) obj.getClass())) {
-            throw new TClassCastException(obj.getClass().getName() + " is not subtype of " + name);
+            throw new TClassCastException(obj.getClass().getName() + " is not subtype of " + getName());
         }
         return (T) obj;
     }
@@ -597,11 +597,11 @@ public class TClass<T> extends TObject implements TAnnotatedElement {
     }
 
     public TClass<?> getDeclaringClass() {
-        ClassResource res = getDeclaringClass(platformClass);
-        return res != null ? getClass(Platform.classFromResource(res)) : null;
+        PlatformClass result = getDeclaringClassImpl(getPlatformClass());
+        return result != null ? getClass(result) : null;
     }
-
-    private static native ClassResource getDeclaringClass(PlatformClass cls);
+    
+    private static native PlatformClass getDeclaringClassImpl(PlatformClass cls);
 
     @SuppressWarnings("unchecked")
     public <U> TClass<? extends U> asSubclass(TClass<U> clazz) {

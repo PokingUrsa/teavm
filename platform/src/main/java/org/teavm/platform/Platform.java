@@ -23,13 +23,12 @@ import org.teavm.interop.Address;
 import org.teavm.interop.DelegateTo;
 import org.teavm.interop.NoSideEffects;
 import org.teavm.interop.PlatformMarker;
-import org.teavm.interop.PlatformMarkers;
+import org.teavm.interop.Platforms;
 import org.teavm.interop.Unmanaged;
 import org.teavm.jso.JSBody;
 import org.teavm.jso.JSObject;
 import org.teavm.jso.browser.Window;
 import org.teavm.jso.core.JSString;
-import org.teavm.platform.metadata.ClassResource;
 import org.teavm.platform.metadata.StaticFieldResource;
 import org.teavm.platform.plugin.PlatformGenerator;
 import org.teavm.runtime.RuntimeClass;
@@ -129,10 +128,6 @@ public final class Platform {
             cls.init.run();
         }
     }
-
-    @InjectedBy(PlatformGenerator.class)
-    @PluggableDependency(PlatformGenerator.class)
-    public static native PlatformClass classFromResource(ClassResource resource);
 
     @InjectedBy(PlatformGenerator.class)
     @PluggableDependency(PlatformGenerator.class)
@@ -251,7 +246,7 @@ public final class Platform {
         return cls.getMetadata().getName();
     }
 
-    @PlatformMarker(PlatformMarkers.LOW_LEVEL)
+    @PlatformMarker(Platforms.LOW_LEVEL)
     private static boolean isLowLevel() {
         return false;
     }

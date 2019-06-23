@@ -25,4 +25,6 @@ public interface ProgramReader {
     int variableCount();
 
     VariableReader variableAt(int index);
+
+    AnnotationContainerReader getAnnotations();
 }

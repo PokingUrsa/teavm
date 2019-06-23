@@ -28,6 +28,7 @@ import org.teavm.model.ClassReaderSource;
 import org.teavm.model.MethodReference;
 import org.teavm.model.classes.VirtualTableProvider;
 import org.teavm.model.lowlevel.Characteristics;
+import org.teavm.vm.BuildTarget;
 
 public class GenerationContext {
     private VirtualTableProvider virtualTableProvider;
@@ -41,11 +42,13 @@ public class GenerationContext {
     private List<Generator> generators;
     private Map<MethodReference, Intrinsic> intrinsicCache = new HashMap<>();
     private Predicate<MethodReference> asyncMethods;
+    private BuildTarget buildTarget;
+    private boolean incremental;
 
     public GenerationContext(VirtualTableProvider virtualTableProvider, Characteristics characteristics,
             DependencyInfo dependencies, StringPool stringPool, NameProvider names, Diagnostics diagnostics,
             ClassReaderSource classSource, List<Intrinsic> intrinsics, List<Generator> generators,
-            Predicate<MethodReference> asyncMethods) {
+            Predicate<MethodReference> asyncMethods, BuildTarget buildTarget, boolean incremental) {
         this.virtualTableProvider = virtualTableProvider;
         this.characteristics = characteristics;
         this.dependencies = dependencies;
@@ -56,10 +59,16 @@ public class GenerationContext {
         this.intrinsics = new ArrayList<>(intrinsics);
         this.generators = new ArrayList<>(generators);
         this.asyncMethods = asyncMethods;
+        this.buildTarget = buildTarget;
+        this.incremental = incremental;
     }
 
     public void addIntrinsic(Intrinsic intrinsic) {
         intrinsics.add(intrinsic);
+    }
+
+    public void addGenerator(Generator generator) {
+        generators.add(generator);
     }
 
     public VirtualTableProvider getVirtualTableProvider() {
@@ -106,5 +115,13 @@ public class GenerationContext {
 
     public boolean isAsync(MethodReference method) {
         return asyncMethods.test(method);
+    }
+
+    public BuildTarget getBuildTarget() {
+        return buildTarget;
+    }
+
+    public boolean isIncremental() {
+        return incremental;
     }
 }

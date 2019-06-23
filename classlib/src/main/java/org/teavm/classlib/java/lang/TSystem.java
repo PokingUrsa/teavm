@@ -19,6 +19,9 @@ import java.util.Enumeration;
 import java.util.Properties;
 import org.teavm.backend.javascript.spi.GeneratedBy;
 import org.teavm.classlib.PlatformDetector;
+import org.teavm.classlib.fs.VirtualFileSystemProvider;
+import org.teavm.classlib.fs.c.CFileSystem;
+import org.teavm.classlib.impl.c.Memory;
 import org.teavm.classlib.java.io.TConsole;
 import org.teavm.classlib.java.io.TInputStream;
 import org.teavm.classlib.java.io.TPrintStream;
@@ -28,6 +31,7 @@ import org.teavm.interop.DelegateTo;
 import org.teavm.interop.Import;
 import org.teavm.interop.NoSideEffects;
 import org.teavm.interop.Unmanaged;
+import org.teavm.jso.browser.Performance;
 import org.teavm.runtime.Allocator;
 import org.teavm.runtime.GC;
 import org.teavm.runtime.RuntimeArray;
@@ -140,7 +144,7 @@ public final class TSystem extends TObject {
     @Import(name = "currentTimeMillis", module = "teavm")
     private static native double currentTimeMillisWasm();
 
-    @Import(name = "currentTimeMillis")
+    @Import(name = "teavm_currentTimeMillis")
     private static native long currentTimeMillisC();
 
     private static void initPropertiesIfNeeded() {
@@ -151,11 +155,41 @@ public final class TSystem extends TObject {
             defaults.put("file.separator", "/");
             defaults.put("path.separator", ":");
             defaults.put("line.separator", lineSeparator());
-            defaults.put("java.io.tmpdir", "/tmp");
+            defaults.put("java.io.tmpdir", getTempDir());
             defaults.put("java.vm.version", "1.8");
-            defaults.put("user.home", "/");
+            defaults.put("user.home", getHomeDir());
             properties = new Properties(defaults);
         }
+    }
+
+    private static String getTempDir() {
+        if (!PlatformDetector.isC()) {
+            return "/tmp";
+        }
+        Address resultPtr = Memory.malloc(Address.sizeOf());
+        int length = CFileSystem.tempDirectory(resultPtr);
+        return VirtualFileSystemProvider.getInstance().canonicalize(toJavaString(resultPtr, length));
+    }
+
+    private static String getHomeDir() {
+        if (!PlatformDetector.isC()) {
+            return "/";
+        }
+
+        Address resultPtr = Memory.malloc(Address.sizeOf());
+        int length = CFileSystem.homeDirectory(resultPtr);
+        return VirtualFileSystemProvider.getInstance().canonicalize(toJavaString(resultPtr, length));
+    }
+
+    private static String toJavaString(Address resultPtr, int length) {
+        Address result = resultPtr.getAddress();
+        Memory.free(resultPtr);
+
+        char[] chars = new char[length];
+        Memory.memcpy(Address.ofData(chars), result, chars.length * 2);
+        Memory.free(result);
+
+        return new String(chars);
     }
 
     public static String getProperty(@SuppressWarnings("unused") String key) {
@@ -222,8 +256,15 @@ public final class TSystem extends TObject {
     }
 
     public static long nanoTime() {
-        return currentTimeMillis() * 1000000;
+        if (PlatformDetector.isLowLevel()) {
+            return nanoTimeLowLevel();
+        } else {
+            return (long) (Performance.now() * 1000000);
+        }
     }
+
+    @Import(name = "teavm_currentTimeNano")
+    private static native long nanoTimeLowLevel();
 
     public static int identityHashCode(Object x) {
         return ((TObject) x).identity();
